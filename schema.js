@@ -9,22 +9,42 @@ const {
   GraphQLList
 } = require('graphql');
 
+function translate(lang, str) {
+  const apiKey = 'AIzaSyAIrSWm3DEgS9-feUoxZUJvPn12GUrLsEE';
+  const url =
+    'https://translation.googleapis.com/language/translate/v2?q=' +
+    encodeURIComponent(str) +
+    '&target=' +
+    lang +
+    '&key=' +
+    apiKey;
+
+  return fetch(url)
+    .then(response => response.json())
+    .then(parsedResponse => parsedResponse.data.translations[0].translatedText);
+}
 
 const BookType = new GraphQLObjectType({
-    name: 'Book',
-    description: '...',
+  name: 'Book',
+  description: '...',
 
-    fields: () => ({
-        title: {
-            type: GraphQLString,
-            resolve: xml => xml.title[0]
-        },
-        isbn: {
-            type: GraphQLString,
-            resolve: xml => xml.isbn[0]
-        }
-    })
-})
+  fields: () => ({
+    title: {
+      type: GraphQLString,
+      args: {
+        lang: { type: GraphQLString }
+      },
+      resolve: (xml, args) => {
+        const title = xml.GoodreadsResponse.book[0].title[0];
+        return args.lang ? translate(args.lang, title) : title;
+      }
+    },
+    isbn: {
+      type: GraphQLString,
+      resolve: xml => xml.GoodreadsResponse.book[0].isbn[0]
+    }
+  })
+});
 
 const AuthorType = new GraphQLObjectType({
   name: 'Author',
@@ -37,7 +57,16 @@ const AuthorType = new GraphQLObjectType({
     },
     books: {
       type: new GraphQLList(BookType),
-      resolve: xml => xml.GoodreadsResponse.author[0].books[0].book
+      resolve: xml => {
+        const ids = xml.GoodreadsResponse.author[0].books[0].book.map(elem => elem.id[0]._);
+        return Promise.all(
+          ids.map(id =>
+            fetch(`https://www.goodreads.com/book/show/${id}.xml?key=Fo14ujjgXswe4jd9kveUQ`)
+              .then(response => response.text())
+              .then(parseXML)
+          )
+        );
+      }
     }
   })
 });
@@ -54,7 +83,9 @@ module.exports = new GraphQLSchema({
           id: { type: GraphQLInt }
         },
         resolve: (root, args) =>
-          fetch(`https://www.goodreads.com/author/show/${args.id}?format=xml&key=Fo14ujjgXswe4jd9kveUQ`)
+          fetch(
+            `https://www.goodreads.com/author/show/${args.id}?format=xml&key=Fo14ujjgXswe4jd9kveUQ`
+          )
             .then(response => response.text())
             .then(parseXML)
       }
