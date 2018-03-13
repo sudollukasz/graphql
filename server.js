@@ -1,14 +1,38 @@
 const express = require('express');
 const graphqlHTTP = require('express-graphql');
+const DataLoader = require('dataloader');
+const fetch = require('node-fetch');
+const util = require('util');
+const parseXML = util.promisify(require('xml2js').parseString);
 const app = express();
 
 const schema = require('./schema.js');
+const keys = require('./keys');
+
+const fetchAuthor = id =>
+  fetch(`https://www.goodreads.com/author/show/${id}?format=xml&key=` + keys.goodreadsKey)
+    .then(response => response.text())
+    .then(parseXML);
+
+const fetchBook = id =>
+  fetch(`https://www.goodreads.com/book/show/${id}.xml?key=` + keys.goodreadsKey)
+    .then(response => response.text())
+    .then(parseXML);
 
 app.use(
   '/graphql',
-  graphqlHTTP({
-    schema,
-    graphiql: true
+  graphqlHTTP(req => {
+    const authorLoader = new DataLoader(keys => Promise.all(keys.map(fetchAuthor)));
+
+    const bookLoader = new DataLoader(keys => Promise.all(keys.map(fetchBook)));
+    return {
+      schema,
+      context: {
+          authorLoader,
+          bookLoader
+      },
+      graphiql: true
+    };
   })
 );
 
